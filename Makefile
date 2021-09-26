@@ -1,7 +1,9 @@
-.PHONY: clean testdata build
+.PHONY: clean testdata build test
 
 clean:
 	@rm -rf ./output \
+		./*.out \
+		go-hijack.test \
 		main
 
 testdata:
@@ -10,3 +12,6 @@ testdata:
 
 build:
 	@go build -o main
+
+test:
+	ginkgo build -gcflags='-l -N' -cover
