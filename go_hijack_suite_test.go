@@ -3,6 +3,7 @@ package gohijack
 import (
 	"context"
 	"debug/dwarf"
+	"debug/elf"
 	"fmt"
 	"os"
 	"reflect"
@@ -16,49 +17,55 @@ import (
 )
 
 //go:noinline
-func this_is_for_test(string) int { return 0 }
+func this_is_for_test(i int) string { return fmt.Sprint(i) }
 
 func TestGoHijack(t *testing.T) {
-	_ = this_is_for_test("")
+	_ = this_is_for_test(0)
 
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "GoHijack Suite")
 }
 
-var _ = Describe("Test FuncTable", func() {
+var _ = Describe("Test Read Dwarf Tree", func() {
 	Context("Read Symbol", func() {
 		var (
 			err   error
 			dw    *dwarf.Data
-			table map[string]*godwarf.Tree
+			trees map[string]*godwarf.Tree
+			syms  []elf.Symbol
 		)
 
 		Context("Open ELF", func() {
 			BeforeEach(func() {
 				pid := os.Getpid()
-				dw, err = Open(fmt.Sprintf("/proc/%d/exe", pid))
+				ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+				dw, _ = ef.DWARF()
+				syms, _ = ef.Symbols()
+
+				trees, err = DwarfTree(dw)
 			})
 
-			It("should open successful", func() {
+			It("should find `this_is_for_test`", func() {
 				Expect(err).To(BeNil())
-			})
 
-			Context("Read Function Table", func() {
-				BeforeEach(func() {
-					table, err = FuncTable(dw)
-				})
-
-				It("should find `this_is_for_test`", func() {
-					Expect(err).To(BeNil())
-
-					var name string
-					for name = range table {
-						if strings.HasSuffix(name, "this_is_for_test") {
-							break
-						}
+				var (
+					name string
+					sym  elf.Symbol
+				)
+				for name = range trees {
+					if strings.HasSuffix(name, "this_is_for_test") {
+						break
 					}
-					Expect(name).ShouldNot(BeEquivalentTo(""))
-				})
+				}
+				Expect(name).ShouldNot(BeEmpty())
+
+				for _, sym = range syms {
+					if strings.HasSuffix(sym.Name, "this_is_for_test") {
+						break
+					}
+				}
+				Expect(sym.Name).ShouldNot(BeEmpty())
+				Expect(sym.Value).ShouldNot(BeZero())
 			})
 		})
 	})
@@ -115,24 +122,24 @@ var _ = Describe("Test UDS Listener", func() {
 })
 
 var _ = Describe("Test Patch", func() {
-	Context("Test Time Patch", func ()  {
+	Context("Test Time Patch", func() {
 		var (
-			g *Guard
-			err error
+			g    *Guard
+			err  error
 			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
 		)
 
-		BeforeEach(func ()  {
+		BeforeEach(func() {
 			g = PatchIndirect(reflect.ValueOf(time.Now), reflect.ValueOf(func() time.Time {
 				return doom
 			}))
 		})
 
-		AfterEach(func ()  {
+		AfterEach(func() {
 			g.Unpatch()
 		})
 
-		It("should patch ok", func ()  {
+		It("should patch ok", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(time.Now()).Should(BeEquivalentTo(doom))
 
@@ -141,6 +148,39 @@ var _ = Describe("Test Patch", func() {
 
 			g.Restore()
 			Expect(time.Now()).Should(BeEquivalentTo(doom))
+		})
+	})
+})
+
+var _ = Describe("Test Make Func", func() {
+	Context("Make Function", func() {
+		var (
+			ft  reflect.Type
+			err error
+		)
+
+		BeforeEach(func() {
+			pid := os.Getpid()
+			ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+			dw, _ := ef.DWARF()
+			trees, _ := DwarfTree(dw)
+
+			for name, tree := range trees {
+				if strings.HasSuffix(name, "this_is_for_test") {
+					ft, err = MakeFunc(tree, dw)
+					break
+				}
+			}
+		})
+
+		It("should be called successfully", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(ft).ShouldNot(BeZero())
+
+			fn := reflect.MakeFunc(ft, func(args []reflect.Value) (results []reflect.Value) {
+				return []reflect.Value{reflect.ValueOf("1024")}
+			}).Interface().(func(int) string)
+			Expect(fn(1)).Should(BeEquivalentTo("1024"))
 		})
 	})
 })

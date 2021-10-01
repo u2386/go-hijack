@@ -67,8 +67,11 @@ func MakeType(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 
 func MakeFunc(tree *godwarf.Tree, dw *dwarf.Data) (reflect.Type, error) {
 	var (
-		in []reflect.Type
+		in  []reflect.Type
 		out []reflect.Type
+
+		args    []string
+		returns []string
 	)
 
 	for _, node := range tree.Children {
@@ -88,9 +91,21 @@ func MakeFunc(tree *godwarf.Tree, dw *dwarf.Data) (reflect.Type, error) {
 
 		if node.Entry.Val(dwarf.AttrVarParam).(bool) {
 			out = append(out, param)
-			continue
+			returns = append(returns, fmt.Sprintf("%s %s", node.Entry.Val(dwarf.AttrName), typ.String()))
+		} else {
+			in = append(in, param)
+			args = append(args, fmt.Sprintf("%s %s", node.Entry.Val(dwarf.AttrName), typ.String()))
 		}
-		in = append(in, param)
 	}
+
+	var sb strings.Builder
+	sb.WriteString(tree.Entry.Val(dwarf.AttrName).(string) + "(" + strings.Join(args, ", ") + ")")
+	if len(returns) > 0 {
+		sb.WriteString(" (")
+		sb.WriteString(strings.Join(returns, ", "))
+		sb.WriteRune(')')
+	}
+	debug("%s", sb.String())
+
 	return reflect.FuncOf(in, out, false), nil
 }

@@ -14,21 +14,22 @@ const (
 	UDSAddress = "/tmp/gohijack.sock"
 )
 
+func debug(format string, args ...interface{}) {
+	if DEBUG != "" {
+		fmt.Fprintf(os.Stderr, format+"\n", args...)
+	}
+}
+
+var DEBUG = ""
+
 type hijack struct {
-	table map[string]*godwarf.Tree
+	dwarftrees map[string]*godwarf.Tree
+	symbols    map[string]elf.Symbol
 }
 
 func (r *hijack) Run() {}
 
-func Open(path string) (*dwarf.Data, error) {
-	e, err := elf.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	return e.DWARF()
-}
-
-func FuncTable(dw *dwarf.Data) (map[string]*godwarf.Tree, error) {
+func DwarfTree(dw *dwarf.Data) (map[string]*godwarf.Tree, error) {
 	reader := dwarfreader.New(dw)
 
 	ts := make(map[string]*godwarf.Tree)
@@ -54,18 +55,33 @@ func FuncTable(dw *dwarf.Data) (map[string]*godwarf.Tree, error) {
 }
 
 func Hijack() error {
-	dw, err := Open(fmt.Sprintf("/proc/%d/exe", os.Getpid()))
-	if err != nil {
-		return err
-	}
-	tab, err := FuncTable(dw)
+	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", os.Getpid()))
 	if err != nil {
 		return err
 	}
 
 	r := &hijack{
-		table: tab,
+		dwarftrees: make(map[string]*godwarf.Tree),
+		symbols:    make(map[string]elf.Symbol),
 	}
+
+	syms, err := ef.Symbols()
+	if err != nil {
+		return err
+	}
+	for _, sym := range syms {
+		r.symbols[sym.Name] = sym
+	}
+
+	dw, err := ef.DWARF()
+	if err != nil {
+		return err
+	}
+	r.dwarftrees, err = DwarfTree(dw)
+	if err != nil {
+		return err
+	}
+
 	go r.Run()
 	return nil
 }

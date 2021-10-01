@@ -1,5 +1,11 @@
 .PHONY: clean testdata build test
 
+DEBUG =
+ifdef GOHIJACK_BUILD_DEBUG
+	DEBUG = -X github.com/u2386/go-hijack.DEBUG=yes
+endif
+LDFLAGS = $(DEBUG)
+
 clean:
 	@rm -rf ./output \
 		./*.out \
@@ -14,4 +20,4 @@ build:
 	@go build -o main
 
 test:
-	ginkgo build -gcflags='-l -N' -cover
+	ginkgo build -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
