@@ -5,6 +5,7 @@ import (
 	"debug/dwarf"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -63,7 +64,7 @@ var _ = Describe("Test FuncTable", func() {
 	})
 })
 
-var _ = Describe("UDS Listener", func() {
+var _ = Describe("Test UDS Listener", func() {
 	Context("Listen on uds", func() {
 		var (
 			ctx    context.Context
@@ -110,5 +111,36 @@ var _ = Describe("UDS Listener", func() {
 			Expect(err).Should(HaveOccurred())
 		})
 
+	})
+})
+
+var _ = Describe("Test Patch", func() {
+	Context("Test Time Patch", func ()  {
+		var (
+			g *Guard
+			err error
+			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+		)
+
+		BeforeEach(func ()  {
+			g = PatchIndirect(reflect.ValueOf(time.Now), reflect.ValueOf(func() time.Time {
+				return doom
+			}))
+		})
+
+		AfterEach(func ()  {
+			g.Unpatch()
+		})
+
+		It("should patch ok", func ()  {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(time.Now()).Should(BeEquivalentTo(doom))
+
+			g.Unpatch()
+			Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+
+			g.Restore()
+			Expect(time.Now()).Should(BeEquivalentTo(doom))
+		})
 	})
 })
