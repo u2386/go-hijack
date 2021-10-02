@@ -5,6 +5,7 @@ import (
 	"unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	dwarfreader "github.com/go-delve/delve/pkg/dwarf/reader"
 )
 
 type (
@@ -40,4 +41,29 @@ func LoadTree(off dwarf.Offset, dw *dwarf.Data) (*godwarf.Tree, error) {
 	tree := (*godwarf.Tree)(unsafe.Pointer(r))
 	tree.Children = *(*[]*godwarf.Tree)(unsafe.Pointer(&r.Children))
 	return tree, nil
+}
+
+func DwarfTree(dw *dwarf.Data) (map[string]*godwarf.Tree, error) {
+	reader := dwarfreader.New(dw)
+
+	ts := make(map[string]*godwarf.Tree)
+	for entry, err := reader.Next(); entry != nil; entry, err = reader.Next() {
+		if err != nil {
+			return nil, err
+		}
+
+		if entry.Tag != dwarf.TagSubprogram {
+			continue
+		}
+
+		tree, err := LoadTree(entry.Offset, dw)
+		if err != nil {
+			return nil, err
+		}
+
+		if name, ok := tree.Entry.Val(dwarf.AttrName).(string); ok {
+			ts[name] = tree
+		}
+	}
+	return ts, nil
 }

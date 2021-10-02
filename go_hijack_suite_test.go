@@ -84,7 +84,9 @@ var _ = Describe("Test UDS Listener", func() {
 		)
 
 		BeforeEach(func() {
-			u := &uds{UDSAddress}
+			u := &uds{
+				addr: UDSAddress,
+			}
 			ctx, cancel = context.WithCancel(context.Background())
 
 			ch := make(chan error, 1)
@@ -259,6 +261,26 @@ var _ = Describe("Test Make Func", func() {
 				return []reflect.Value{reflect.ValueOf("1024")}
 			}).Interface().(func(int) string)
 			Expect(fn(1)).Should(BeEquivalentTo("1024"))
+		})
+	})
+})
+
+var _ = Describe("Test Parser", func() {
+	Context("Test Simple Parser", func() {
+		var (
+			point *HijackPoint
+		)
+
+		BeforeEach(func() {
+			parser := SimpleParser()
+			point = parser.Parse("func:this_is_for_test,action:delay,val:10")
+		})
+
+		It("should parse successfully", func() {
+			Expect(point).ShouldNot(BeNil())
+			Expect(point.Func).To(BeEquivalentTo("this_is_for_test"))
+			Expect(point.Action).To(BeEquivalentTo("delay"))
+			Expect(point.Val).To(BeEquivalentTo("10"))
 		})
 	})
 })
