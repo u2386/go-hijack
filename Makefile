@@ -1,4 +1,4 @@
-.PHONY: clean testdata build test
+.PHONY: clean testdata build test run-test
 
 DEBUG =
 ifdef GOHIJACK_BUILD_DEBUG
@@ -20,4 +20,7 @@ build:
 	@go build -o main
 
 test:
-	ginkgo build -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
+	@ginkgo build -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
+
+run-test: clean test
+	@./go-hijack.test -ginkgo.v

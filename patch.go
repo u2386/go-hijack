@@ -11,10 +11,10 @@ var ErrTypeUnsupported = errors.New("type unsupported")
 
 type (
 	Guard struct {
-		target      *reflect.Value
-		replacement *reflect.Value
-		original    []byte
-		patched     []byte
+		from     uintptr
+		to       uintptr
+		original []byte
+		patched  []byte
 	}
 
 	value struct {
@@ -23,9 +23,28 @@ type (
 	}
 )
 
-func Patch(target, replacement reflect.Value) *Guard {
-	from := target.Pointer()
-	to := (uintptr)(getPtr(replacement))
+func GetPtr(t interface{}) uintptr {
+	v := reflect.ValueOf(t)
+	switch k := v.Kind(); k {
+	case reflect.Func:
+		return v.Pointer()
+	case reflect.Uintptr:
+		return v.Interface().(uintptr)
+	case reflect.Uint64:
+		return uintptr(v.Interface().(uint64))
+	case reflect.Ptr:
+		return (uintptr)((*value)(unsafe.Pointer(t.(*interface{}))).ptr)
+	default:
+		return 0
+	}
+}
+
+func Patch(target, replacement interface{}) *Guard {
+	from := GetPtr(target)
+	to := GetPtr(&replacement)
+	if from == 0 || to == 0 {
+		return nil
+	}
 
 	code := []byte{
 		0x68, //push
@@ -40,12 +59,15 @@ func Patch(target, replacement reflect.Value) *Guard {
 	original := make([]byte, len(f))
 	copy(original, f)
 	CopyToLocation(from, code)
-	return &Guard{target: &target, replacement: &replacement, original: original, patched: code}
+	return &Guard{from: from, to: to, original: original, patched: code}
 }
 
-func PatchIndirect(target, replacement reflect.Value) *Guard {
-	from := target.Pointer()
-	to := (uintptr)(getPtr(replacement))
+func PatchIndirect(target, replacement interface{}) *Guard {
+	from := GetPtr(target)
+	to := GetPtr(&replacement)
+	if from == 0 || to == 0 {
+		return nil
+	}
 
 	code := []byte{
 		0x48, 0xBA,
@@ -64,15 +86,15 @@ func PatchIndirect(target, replacement reflect.Value) *Guard {
 	original := make([]byte, len(f))
 	copy(original, f)
 	CopyToLocation(from, code)
-	return &Guard{target: &target, replacement: &replacement, original: original, patched: code}
+	return &Guard{from: from, to: to, original: original, patched: code}
 }
 
 func (g *Guard) Unpatch() {
-	CopyToLocation(g.target.Pointer(), g.original)
+	CopyToLocation(g.from, g.original)
 }
 
 func (g *Guard) Restore() {
-	CopyToLocation(g.target.Pointer(), g.patched)
+	CopyToLocation(g.from, g.patched)
 }
 
 func RawMemoryAccess(p uintptr, length int) []byte {
@@ -103,8 +125,4 @@ func MprotectCrossPage(addr uintptr, length int, prot int) {
 
 func PageStart(ptr uintptr) uintptr {
 	return ptr & ^(uintptr(syscall.Getpagesize() - 1))
-}
-
-func getPtr(v reflect.Value) uintptr {
-	return (uintptr)((*value)(unsafe.Pointer(&v)).ptr)
 }

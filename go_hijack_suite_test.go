@@ -16,6 +16,10 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var (
+	doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+)
+
 //go:noinline
 func this_is_for_test(i int) string { return fmt.Sprint(i) }
 
@@ -121,18 +125,26 @@ var _ = Describe("Test UDS Listener", func() {
 	})
 })
 
+func doomer() time.Time { return doom }
+
 var _ = Describe("Test Patch", func() {
-	Context("Test Time Patch", func() {
+	Context("Test Time Patch by Pointer", func() {
 		var (
-			g    *Guard
-			err  error
-			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+			g   *Guard
+			sym elf.Symbol
 		)
 
 		BeforeEach(func() {
-			g = PatchIndirect(reflect.ValueOf(time.Now), reflect.ValueOf(func() time.Time {
-				return doom
-			}))
+			pid := os.Getpid()
+			ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+			syms, _ := ef.Symbols()
+			for _, sym = range syms {
+				if strings.HasSuffix(sym.Name, "time.Now") {
+					break
+				}
+			}
+
+			g = PatchIndirect(doomer, sym.Value)
 		})
 
 		AfterEach(func() {
@@ -140,7 +152,73 @@ var _ = Describe("Test Patch", func() {
 		})
 
 		It("should patch ok", func() {
-			Expect(err).ShouldNot(HaveOccurred())
+			Expect(g).ShouldNot(BeNil())
+			Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
+
+			g.Unpatch()
+			Expect(doomer()).Should(BeEquivalentTo(doom))
+
+			g.Restore()
+			Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
+		})
+	})
+
+	Context("Test Time Patch Indirect by Pointer", func() {
+		var (
+			g    *Guard
+			sym  elf.Symbol
+			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+		)
+
+		BeforeEach(func() {
+			pid := os.Getpid()
+			ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+			syms, _ := ef.Symbols()
+			for _, sym = range syms {
+				if strings.HasSuffix(sym.Name, "time.Now") {
+					break
+				}
+			}
+
+			g = PatchIndirect(sym.Value, func() time.Time {
+				return doom
+			})
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should patch ok", func() {
+			Expect(g).ShouldNot(BeNil())
+			Expect(time.Now()).Should(BeEquivalentTo(doom))
+
+			g.Unpatch()
+			Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+
+			g.Restore()
+			Expect(time.Now()).Should(BeEquivalentTo(doom))
+		})
+	})
+
+	Context("Test Time Patch Indirect", func() {
+		var (
+			g    *Guard
+			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+		)
+
+		BeforeEach(func() {
+			g = PatchIndirect(time.Now, func() time.Time {
+				return doom
+			})
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should patch ok", func() {
+			Expect(g).ShouldNot(BeNil())
 			Expect(time.Now()).Should(BeEquivalentTo(doom))
 
 			g.Unpatch()
