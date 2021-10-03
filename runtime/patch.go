@@ -1,4 +1,4 @@
-package gohijack
+package runtime
 
 import (
 	"errors"

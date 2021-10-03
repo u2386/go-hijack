@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	"github.com/u2386/go-hijack/runtime"
 )
 
 const (
@@ -14,12 +15,6 @@ const (
 )
 
 type (
-	HijackPoint struct {
-		Func   string
-		Action string
-		Val    interface{}
-	}
-
 	hijack struct {
 		dwarftrees map[string]*godwarf.Tree
 		symbols    map[string]elf.Symbol
@@ -61,7 +56,7 @@ func Hijack(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.dwarftrees, err = DwarfTree(dw)
+	r.dwarftrees, err = runtime.DwarfTree(dw)
 	if err != nil {
 		return err
 	}

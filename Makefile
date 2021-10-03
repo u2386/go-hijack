@@ -2,7 +2,7 @@
 
 DEBUG =
 ifdef GOHIJACK_BUILD_DEBUG
-	DEBUG = -X github.com/u2386/go-hijack.DEBUG=yes
+	DEBUG = -X github.com/u2386/go-hijack/runtime.DEBUG=yes
 endif
 LDFLAGS = $(DEBUG)
 
@@ -11,6 +11,7 @@ clean:
 		./*.out \
 		go-hijack.test \
 		main
+	@find . -name 'cover.out' -type f -exec rm {} \;
 
 testdata:
 	@mkdir -p output
@@ -20,7 +21,8 @@ build:
 	@go build -o main
 
 test:
-	@ginkgo build -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
+	@mkdir -p ./output/test/cover
+	@ginkgo -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)" -outputdir ./output/test/cover -coverprofile cover.out
 
-run-test: clean test
-	@./go-hijack.test -ginkgo.v
+build-test: clean test
+	@@ginkgo build -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
