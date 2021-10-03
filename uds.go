@@ -49,7 +49,7 @@ func (s *uds) Run(ctx context.Context) error {
 				}
 				return nil
 			}
-			go s.serve(conn)
+			s.serve(conn)
 		}
 	})
 	g.Go(func() error {

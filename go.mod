@@ -3,6 +3,7 @@ module github.com/u2386/go-hijack
 go 1.16
 
 require (
+	bou.ke/monkey v1.0.2
 	github.com/drone/signal v1.0.0
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-delve/delve v1.7.1

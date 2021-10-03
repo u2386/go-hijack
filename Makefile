@@ -22,7 +22,7 @@ build:
 
 test:
 	@mkdir -p ./output/test/cover
-	@ginkgo -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)" -outputdir ./output/test/cover -coverprofile cover.out
+	@ginkgo -p -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)" -outputdir ./output/test/cover -coverprofile cover.out
 
 build-test: clean test
 	@@ginkgo build -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"

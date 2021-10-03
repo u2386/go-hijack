@@ -30,6 +30,7 @@ func debug(format string, args ...interface{}) {
 }
 
 func critical(format string, args ...interface{}) {
+	os.Stderr.Sync()
 	fmt.Fprintf(os.Stderr, "GOHIJACK: "+format+"\n", args...)
 }
 

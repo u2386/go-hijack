@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"debug/dwarf"
 	"debug/elf"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"bou.ke/monkey"
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -209,6 +211,96 @@ var _ = Describe("Test Make Func", func() {
 				return []reflect.Value{reflect.ValueOf("1024")}
 			}).Interface().(func(int) string)
 			Expect(fn(1)).Should(BeEquivalentTo("1024"))
+		})
+	})
+})
+
+var _ = Describe("Test Hijack Runtime", func() {
+	Context("Test Run", func() {
+		var (
+			r *Runtime
+		)
+
+		BeforeEach(func() {
+			r = New()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			go r.Run(ctx)
+			r.C <- func() {}
+			time.Sleep(time.Second)
+			cancel()
+		})
+
+		It("should exit", func() {
+			time.Sleep(time.Millisecond)
+			Expect(r.C).To(BeClosed())
+		})
+	})
+
+	Context("Test Hijack", func() {
+		var (
+			r       *Runtime
+			ctx     context.Context
+			cancel  context.CancelFunc
+			patched bool
+			err     error
+		)
+
+		BeforeEach(func() {
+			ctx, cancel = context.WithCancel(context.Background())
+
+			r = New()
+			r.patches["u2386"] = func(*HijackPoint) (*Guard, error) { patched = true; return nil, nil }
+			go r.Run(ctx)
+			err = r.Hijack(&HijackPoint{Action: "u2386"})
+		})
+
+		AfterEach(func() {
+			cancel()
+		})
+
+		It("should patch successfully", func() {
+			Expect(err).To(BeNil())
+			Expect(patched).To(BeTrue())
+		})
+
+		It("should return error", func ()  {
+			Expect(r.Hijack(&HijackPoint{Action: "unknown"})).To(BeEquivalentTo(ErrUnsupportAction))
+		})
+	})
+
+	Context("Test Release Hijack Point", func() {
+		var (
+			r         *Runtime
+			ctx       context.Context
+			cancel    context.CancelFunc
+			pg        *monkey.PatchGuard
+			unpatched bool
+		)
+
+		BeforeEach(func() {
+			ctx, cancel = context.WithCancel(context.Background())
+
+			var g *Guard
+			pg = monkey.PatchInstanceMethod(reflect.TypeOf(g), "Unpatch", func(*Guard) { unpatched = true })
+
+			r = New()
+			r.M.Store("u2386", g)
+			go r.Run(ctx)
+
+		})
+
+		AfterEach(func() {
+			pg.Unpatch()
+			cancel()
+		})
+
+		It("should release successfully", func() {
+			r.Release("unknown")
+			Expect(unpatched).To(BeFalse())
+
+			r.Release("u2386")
+			Expect(unpatched).To(BeTrue())
 		})
 	})
 })
