@@ -47,29 +47,6 @@ func Patch(target, replacement interface{}) *Guard {
 	}
 
 	code := []byte{
-		0x68, //push
-		byte(to), byte(to >> 8), byte(to >> 16), byte(to >> 24),
-		0xc7, 0x44, 0x24, // mov $value, 4%rsp
-		0x04, // rsp + 4
-		byte(to >> 32), byte(to >> 40), byte(to >> 48), byte(to >> 56),
-		0xc3, // retn
-	}
-
-	f := RawMemoryAccess(from, len(code))
-	original := make([]byte, len(f))
-	copy(original, f)
-	CopyToLocation(from, code)
-	return &Guard{from: from, to: to, original: original, patched: code}
-}
-
-func PatchIndirect(target, replacement interface{}) *Guard {
-	from := GetPtr(target)
-	to := GetPtr(&replacement)
-	if from == 0 || to == 0 {
-		return nil
-	}
-
-	code := []byte{
 		0x48, 0xBA,
 		byte(to),
 		byte(to >> 8),

@@ -82,7 +82,6 @@ var _ = Describe("Test Read Dwarf Tree", func() {
 var _ = Describe("Test Patch", func() {
 	Context("Test Time Patch by Pointer", func() {
 		var (
-			g   *Guard
 			sym elf.Symbol
 		)
 
@@ -95,91 +94,139 @@ var _ = Describe("Test Patch", func() {
 					break
 				}
 			}
-
-			g = PatchIndirect(doomer, sym.Value)
 		})
 
-		AfterEach(func() {
-			g.Unpatch()
-		})
+		Context("Test Patch Native Func by Pointer", func() {
+			var (
+				g *Guard
+			)
 
-		It("should patch ok", func() {
-			Expect(g).ShouldNot(BeNil())
-			Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
+			BeforeEach(func() {
+				g = Patch(doomer, sym.Value)
+			})
 
-			g.Unpatch()
-			Expect(doomer()).Should(BeEquivalentTo(doom))
+			AfterEach(func() {
+				g.Unpatch()
+			})
 
-			g.Restore()
-			Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
-		})
-	})
+			It("should patch ok", func() {
+				Expect(g).ShouldNot(BeNil())
+				Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
 
-	Context("Test Time Patch Indirect by Pointer", func() {
-		var (
-			g    *Guard
-			sym  elf.Symbol
-			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
-		)
+				g.Unpatch()
+				Expect(doomer()).Should(BeEquivalentTo(doom))
 
-		BeforeEach(func() {
-			pid := os.Getpid()
-			ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
-			syms, _ := ef.Symbols()
-			for _, sym = range syms {
-				if strings.HasSuffix(sym.Name, "time.Now") {
-					break
-				}
-			}
-
-			g = PatchIndirect(sym.Value, func() time.Time {
-				return doom
+				g.Restore()
+				Expect(doomer()).ShouldNot(BeEquivalentTo(doom))
 			})
 		})
 
-		AfterEach(func() {
-			g.Unpatch()
-		})
+		Context("Test Patch reflect.MakeFunc by Pointer", func() {
+			var (
+				stub reflect.Value
+				g    *Guard
+			)
+			BeforeEach(func() {
+				t := reflect.FuncOf([]reflect.Type{}, []reflect.Type{reflect.TypeOf(time.Time{})}, false)
+				stub = reflect.MakeFunc(t, nil)
+				g = Patch(stub.Pointer(), sym.Value)
+			})
 
-		It("should patch ok", func() {
-			Expect(g).ShouldNot(BeNil())
-			Expect(time.Now()).Should(BeEquivalentTo(doom))
+			AfterEach(func() {
+				g.Unpatch()
+			})
 
-			g.Unpatch()
-			Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+			It("should patch ok", func() {
+				Expect(g).ShouldNot(BeNil())
 
-			g.Restore()
-			Expect(time.Now()).Should(BeEquivalentTo(doom))
-		})
-	})
-
-	Context("Test Time Patch Indirect", func() {
-		var (
-			g    *Guard
-			doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
-		)
-
-		BeforeEach(func() {
-			g = PatchIndirect(time.Now, func() time.Time {
-				return doom
+				rv := stub.Call(nil)
+				_, ok := rv[0].Interface().(time.Time)
+				Expect(ok).Should(BeTrue())
 			})
 		})
 
-		AfterEach(func() {
-			g.Unpatch()
+		Context("Test Patch Function Pointer by reflect.MakeFunc", func() {
+			var (
+				g    *Guard
+			)
+			BeforeEach(func() {
+				t := reflect.FuncOf([]reflect.Type{}, []reflect.Type{reflect.TypeOf(time.Time{})}, false)
+				stub := reflect.MakeFunc(t, func(args []reflect.Value) (results []reflect.Value) {
+					return []reflect.Value{reflect.ValueOf(doom)}
+				}).Interface()
+				g = Patch(sym.Value, stub)
+			})
+
+			AfterEach(func() {
+				g.Unpatch()
+			})
+
+			It("should patch ok", func() {
+				Expect(g).ShouldNot(BeNil())
+
+				t := time.Now()
+				Expect(t).Should(BeEquivalentTo(doom))
+			})
 		})
 
-		It("should patch ok", func() {
-			Expect(g).ShouldNot(BeNil())
-			Expect(time.Now()).Should(BeEquivalentTo(doom))
+		Context("Test Patch Function Pointer by Native Function", func() {
+			var (
+				g    *Guard
+				doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+			)
 
-			g.Unpatch()
-			Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+			BeforeEach(func() {
+				g = Patch(sym.Value, func() time.Time {
+					return doom
+				})
+			})
 
-			g.Restore()
-			Expect(time.Now()).Should(BeEquivalentTo(doom))
+			AfterEach(func() {
+				g.Unpatch()
+			})
+
+			It("should patch ok", func() {
+				Expect(g).ShouldNot(BeNil())
+				Expect(time.Now()).Should(BeEquivalentTo(doom))
+
+				g.Unpatch()
+				Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+
+				g.Restore()
+				Expect(time.Now()).Should(BeEquivalentTo(doom))
+			})
 		})
+
+		Context("Test Patch Native Function By Function", func() {
+			var (
+				g    *Guard
+				doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+			)
+
+			BeforeEach(func() {
+				g = Patch(time.Now, func() time.Time {
+					return doom
+				})
+			})
+
+			AfterEach(func() {
+				g.Unpatch()
+			})
+
+			It("should patch ok", func() {
+				Expect(g).ShouldNot(BeNil())
+				Expect(time.Now()).Should(BeEquivalentTo(doom))
+
+				g.Unpatch()
+				Expect(time.Now()).ShouldNot(BeEquivalentTo(doom))
+
+				g.Restore()
+				Expect(time.Now()).Should(BeEquivalentTo(doom))
+			})
+		})
+
 	})
+
 })
 
 var _ = Describe("Test Make Func", func() {
@@ -264,7 +311,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 			Expect(patched).To(BeTrue())
 		})
 
-		It("should return error", func ()  {
+		It("should return error", func() {
 			Expect(r.Hijack(&HijackPoint{Action: "unknown"})).To(BeEquivalentTo(ErrUnsupportAction))
 		})
 	})

@@ -127,17 +127,17 @@ func (r *Runtime) delay(point *HijackPoint) (*Guard, error) {
 		return nil, err
 	}
 
-	stub := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) { return })
+	stub := reflect.MakeFunc(typ, nil)
 	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
 		time.Sleep(time.Millisecond * time.Duration(millsecs))
 		guard.Unpatch()
 		defer guard.Restore()
 
-		g := Patch(stub, symbol.Value)
+		g := Patch(stub.Pointer(), symbol.Value)
 		defer g.Unpatch()
 		return stub.Call(args)
 	})
 
-	guard = PatchIndirect(symbol.Value, replacement)
+	guard = Patch(symbol.Value, replacement.Interface())
 	return guard, nil
 }

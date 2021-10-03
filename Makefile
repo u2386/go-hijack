@@ -24,5 +24,5 @@ test:
 	@mkdir -p ./output/test/cover
 	@ginkgo -p -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)" -outputdir ./output/test/cover -coverprofile cover.out
 
-build-test: clean test
+build-test: clean
 	@@ginkgo build -r -gcflags='-l -N' -cover -ldflags "$(LDFLAGS)"
