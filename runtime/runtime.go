@@ -90,13 +90,6 @@ func New(pid int) (*Runtime, error) {
 func (r *Runtime) Run(ctx context.Context) {
 	go func() {
 		runtime.LockOSThread()
-		defer func() {
-			r.M.Range(func(key, value interface{}) bool {
-				value.(*Guard).Unpatch()
-				r.M.Delete(key)
-				return true
-			})
-		}()
 		defer close(r.C)
 
 		for {

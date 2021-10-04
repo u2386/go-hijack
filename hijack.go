@@ -35,13 +35,10 @@ func Hijack(ctx context.Context) error {
 	server := &uds{
 		Addr:    UDSAddress,
 		Runtime: r,
-		Parser: JsonParser(),
+		Parser:  JsonParser(),
 	}
 
-	ch := make(chan error)
-	select {
-	case ch <- server.Run(ctx):
-	case <-time.After(100 * time.Millisecond):
-	}
-	return <-ch
+	go func() { err = server.Run(ctx) }()
+	time.Sleep(100 * time.Millisecond)
+	return err
 }

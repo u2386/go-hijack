@@ -12,7 +12,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/drone/signal"
 	"github.com/u2386/go-hijack/runtime"
 	"golang.org/x/sync/errgroup"
 )
@@ -30,7 +29,6 @@ func (s *uds) Run(ctx context.Context) error {
 	}
 	critical("serving on %s", s.Addr)
 
-	ctx, cancel := context.WithCancel(ctx)
 	cleanup := func() {
 		listener.Close()
 		if _, err := os.Stat(s.Addr); err == nil {
@@ -40,7 +38,6 @@ func (s *uds) Run(ctx context.Context) error {
 		}
 		critical("server closed %s", s.Addr)
 	}
-	signal.WithContextFunc(ctx, func() { cancel() })
 
 	var g errgroup.Group
 	g.Go(func() error {
