@@ -13,17 +13,17 @@ import (
 	gohijack "github.com/u2386/go-hijack"
 )
 
-
 //go:noinline
-func DoingSomething() {
+func DoingSomething(s string) string {
+	return fmt.Sprintf("foo:%s", s)
 }
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
 
-	DoingSomething()
-	fmt.Fprintf(w, "echo:%s", body)
+	data := DoingSomething(string(body))
+	fmt.Fprintf(w, "echo:%s", []byte(data))
 }
 
 func main() {
