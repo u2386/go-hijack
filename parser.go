@@ -1,9 +1,7 @@
 package gohijack
 
 import (
-	"strings"
-
-	"github.com/mitchellh/mapstructure"
+	"encoding/json"
 	"github.com/u2386/go-hijack/runtime"
 )
 
@@ -12,23 +10,17 @@ type (
 		Parse(string) *runtime.HijackPoint
 	}
 
-	simple struct{}
+	jsonparser struct{}
 )
 
-func SimpleParser() *simple {
-	return &simple{}
+func JsonParser() *jsonparser {
+	return &jsonparser{}
 }
 
-func (*simple) Parse(content string) *runtime.HijackPoint {
-	m := make(map[string]interface{})
-	for _, s := range strings.Split(content, ",") {
-		v := strings.Split(strings.TrimSpace(s), ":")
-		m[strings.TrimSpace(v[0])] = strings.TrimSpace(v[1])
-	}
-	var p runtime.HijackPoint
-	if err := mapstructure.Decode(m, &p); err != nil {
-		debug("parse error: %s", err)
+func (*jsonparser) Parse(content string) *runtime.HijackPoint {
+	p := &runtime.HijackPoint{}
+	if err := json.Unmarshal([]byte(content), p); err != nil {
 		return nil
 	}
-	return &p
+	return p
 }

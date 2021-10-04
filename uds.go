@@ -13,28 +13,32 @@ import (
 	"strings"
 
 	"github.com/drone/signal"
+	"github.com/u2386/go-hijack/runtime"
 	"golang.org/x/sync/errgroup"
 )
 
 type uds struct {
-	addr   string
+	Addr    string
+	Parser  Parser
+	Runtime *runtime.Runtime
 }
 
 func (s *uds) Run(ctx context.Context) error {
-	listener, err := net.Listen("unix", s.addr)
+	listener, err := net.Listen("unix", s.Addr)
 	if err != nil {
 		return err
 	}
-	critical("serving on %s", s.addr)
+	critical("serving on %s", s.Addr)
 
 	ctx, cancel := context.WithCancel(ctx)
 	cleanup := func() {
 		listener.Close()
-		if _, err := os.Stat(s.addr); err == nil {
-			if err := os.RemoveAll(s.addr); err != nil {
+		if _, err := os.Stat(s.Addr); err == nil {
+			if err := os.RemoveAll(s.Addr); err != nil {
 				critical("unexcepted error:%s", err)
 			}
 		}
+		critical("server closed %s", s.Addr)
 	}
 	signal.WithContextFunc(ctx, func() { cancel() })
 
@@ -82,13 +86,29 @@ func (s *uds) serve(conn net.Conn) {
 		io.Copy(conn, bytes.NewReader([]byte(args)))
 
 	case "/get":
-		var ns []string
-		io.Copy(conn, strings.NewReader(fmt.Sprint("points:", strings.Join(ns, ", "))))
+		switch args {
+		case "funcs":
+			ns := s.Runtime.Funcs()
+			io.Copy(conn, strings.NewReader(fmt.Sprint("funcs:", strings.Join(ns, "\n"))))
+		case "points":
+			ns := s.Runtime.Points()
+			io.Copy(conn, strings.NewReader(fmt.Sprint("points:", strings.Join(ns, "\n"))))
+		}
 
 	case "/post":
-		io.Copy(conn, strings.NewReader("error: parse error"))
+		point := s.Parser.Parse(args)
+		if point == nil {
+			io.Copy(conn, strings.NewReader("error: parse error"))
+			return
+		}
+		if err := s.Runtime.Hijack(point); err != nil {
+			io.Copy(conn, strings.NewReader(fmt.Sprintf("error:%s", err)))
+			return
+		}
+		io.Copy(conn, strings.NewReader("ok"))
 
 	case "/delete":
+		s.Runtime.Release(args)
 		io.Copy(conn, strings.NewReader("ok"))
 
 	default:

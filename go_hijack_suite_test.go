@@ -32,7 +32,7 @@ var _ = Describe("Test UDS Listener", func() {
 
 		BeforeEach(func() {
 			u := &uds{
-				addr: UDSAddress,
+				Addr: UDSAddress,
 			}
 			ctx, cancel = context.WithCancel(context.Background())
 
@@ -75,21 +75,27 @@ var _ = Describe("Test UDS Listener", func() {
 })
 
 var _ = Describe("Test Parser", func() {
-	Context("Test Simple Parser", func() {
+	Context("Test Json Parser", func() {
 		var (
 			point *runtime.HijackPoint
 		)
 
 		BeforeEach(func() {
-			parser := SimpleParser()
-			point = parser.Parse("func:this_is_for_test,action:delay,val:10")
+			parser := JsonParser()
+			point = parser.Parse(`
+			{
+				"func":"this_is_for_test",
+				"action":"delay",
+				"val": 10
+			}
+			`)
 		})
 
 		It("should parse successfully", func() {
 			Expect(point).ShouldNot(BeNil())
 			Expect(point.Func).To(BeEquivalentTo("this_is_for_test"))
 			Expect(point.Action).To(BeEquivalentTo("delay"))
-			Expect(point.Val).To(BeEquivalentTo("10"))
+			Expect(point.Val).To(BeEquivalentTo(10))
 		})
 	})
 })

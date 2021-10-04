@@ -19,6 +19,7 @@ import (
 
 var (
 	doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
+	pid = os.Getpid()
 )
 
 //go:noinline
@@ -269,7 +270,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 		)
 
 		BeforeEach(func() {
-			r = New()
+			r, _ = New(pid)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			go r.Run(ctx)
@@ -296,7 +297,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 		BeforeEach(func() {
 			ctx, cancel = context.WithCancel(context.Background())
 
-			r = New()
+			r, _ = New(pid)
 			r.patches["u2386"] = func(*HijackPoint) (*Guard, error) { patched = true; return nil, nil }
 			go r.Run(ctx)
 			err = r.Hijack(&HijackPoint{Action: "u2386"})
@@ -331,7 +332,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 			var g *Guard
 			pg = monkey.PatchInstanceMethod(reflect.TypeOf(g), "Unpatch", func(*Guard) { unpatched = true })
 
-			r = New()
+			r, _ = New(pid)
 			r.M.Store("u2386", g)
 			go r.Run(ctx)
 
@@ -360,7 +361,7 @@ var _ = Describe("Test Function Hijack", func() {
 		)
 
 		BeforeEach(func() {
-			r := New()
+			r, _:= New(pid)
 			point := &HijackPoint{
 				Func:   "github.com/u2386/go-hijack/runtime.this_is_for_test",
 				Action: DELAY,

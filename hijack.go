@@ -2,11 +2,11 @@ package gohijack
 
 import (
 	"context"
-	"debug/elf"
+	"errors"
 	"fmt"
 	"os"
+	"time"
 
-	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 	"github.com/u2386/go-hijack/runtime"
 )
 
@@ -14,20 +14,10 @@ const (
 	UDSAddress = "/tmp/gohijack.sock"
 )
 
-type (
-	hijack struct {
-		dwarftrees map[string]*godwarf.Tree
-		symbols    map[string]elf.Symbol
-	}
+var (
+	DEBUG          = ""
+	ErrSetupFailed = errors.New("setup failed")
 )
-
-var DEBUG = ""
-
-func debug(format string, args ...interface{}) {
-	if DEBUG != "" {
-		fmt.Fprintf(os.Stderr, "GOHIJACK: "+format+"\n", args...)
-	}
-}
 
 func critical(format string, args ...interface{}) {
 	os.Stderr.Sync()
@@ -35,31 +25,23 @@ func critical(format string, args ...interface{}) {
 }
 
 func Hijack(ctx context.Context) error {
-	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", os.Getpid()))
+	pid := os.Getpid()
+	r, err := runtime.New(pid)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s:%s", ErrSetupFailed, err)
+	}
+	go r.Run(ctx)
+
+	server := &uds{
+		Addr:    UDSAddress,
+		Runtime: r,
+		Parser: JsonParser(),
 	}
 
-	r := &hijack{
-		dwarftrees: make(map[string]*godwarf.Tree),
-		symbols:    make(map[string]elf.Symbol),
+	ch := make(chan error)
+	select {
+	case ch <- server.Run(ctx):
+	case <-time.After(100 * time.Millisecond):
 	}
-
-	syms, err := ef.Symbols()
-	if err != nil {
-		return err
-	}
-	for _, sym := range syms {
-		r.symbols[sym.Name] = sym
-	}
-
-	dw, err := ef.DWARF()
-	if err != nil {
-		return err
-	}
-	r.dwarftrees, err = runtime.DwarfTree(dw)
-	if err != nil {
-		return err
-	}
-	return nil
+	return <-ch
 }

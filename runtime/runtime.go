@@ -53,7 +53,7 @@ func debug(format string, args ...interface{}) {
 	}
 }
 
-func New() *Runtime {
+func New(pid int) (*Runtime, error) {
 	r := &Runtime{}
 	r.M = sync.Map{}
 	r.C = make(chan func(), 1)
@@ -62,15 +62,14 @@ func New() *Runtime {
 		DELAY: r.delay,
 	}
 
-	pid := os.Getpid()
 	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	syms, err := ef.Symbols()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for _, sym := range syms {
 		r.symbols[sym.Name] = sym
@@ -78,19 +77,26 @@ func New() *Runtime {
 
 	r.dwarf, err = ef.DWARF()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	r.dwarftrees, err = DwarfTree(r.dwarf)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
-	return r
+	return r, nil
 }
 
 func (r *Runtime) Run(ctx context.Context) {
 	go func() {
 		runtime.LockOSThread()
+		defer func() {
+			r.M.Range(func(key, value interface{}) bool {
+				value.(*Guard).Unpatch()
+				r.M.Delete(key)
+				return true
+			})
+		}()
 		defer close(r.C)
 
 		for {
@@ -104,12 +110,28 @@ func (r *Runtime) Run(ctx context.Context) {
 	}()
 }
 
+func (r *Runtime) Funcs() []string {
+	var ns []string
+	for sym := range r.symbols {
+		ns = append(ns, sym)
+	}
+	return ns
+}
+
+func (r *Runtime) Points() []string {
+	var ns []string
+	r.M.Range(func(key, value interface{}) bool {
+		ns = append(ns, key.(string))
+		return true
+	})
+	return ns
+}
+
 func (r *Runtime) Release(fn string) {
 	r.M.Range(func(key, value interface{}) bool {
 		if strings.EqualFold(fn, key.(string)) {
-			if v, ok := r.M.LoadAndDelete(key); ok {
-				v.(*Guard).Unpatch()
-			}
+			value.(*Guard).Unpatch()
+			r.M.Delete(key)
 			return false
 		}
 		return true
