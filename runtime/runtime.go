@@ -138,7 +138,14 @@ func (r *Runtime) Hijack(point *HijackPoint) error {
 		}
 
 		c := make(chan error, 1)
-		r.C <- func() { g, err := patch(point); r.M.Store(point.Func, g); c <- err }
+		r.C <- func() {
+			if g, err := patch(point); err == nil {
+				r.M.Store(point.Func, g)
+				c <- nil
+			} else {
+				c <- err
+			}
+		}
 		return <-c
 	}
 	return ErrUnsupportAction
