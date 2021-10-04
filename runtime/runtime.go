@@ -57,9 +57,34 @@ func New() *Runtime {
 	r := &Runtime{}
 	r.M = sync.Map{}
 	r.C = make(chan func(), 1)
+	r.symbols = make(map[string]elf.Symbol)
 	r.patches = map[Action]ActionFunc{
 		DELAY: r.delay,
 	}
+
+	pid := os.Getpid()
+	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		return nil
+	}
+
+	syms, err := ef.Symbols()
+	if err != nil {
+		return nil
+	}
+	for _, sym := range syms {
+		r.symbols[sym.Name] = sym
+	}
+
+	r.dwarf, err = ef.DWARF()
+	if err != nil {
+		return nil
+	}
+	r.dwarftrees, err = DwarfTree(r.dwarf)
+	if err != nil {
+		return nil
+	}
+
 	return r
 }
 
@@ -105,7 +130,7 @@ func (r *Runtime) Hijack(point *HijackPoint) error {
 }
 
 func (r *Runtime) delay(point *HijackPoint) (*Guard, error) {
-	millsecs, ok := point.Val.(uint)
+	millsecs, ok := point.Val.(int)
 	if !ok {
 		return nil, ErrUnsupportAction
 	}

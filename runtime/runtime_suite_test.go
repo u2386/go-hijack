@@ -147,7 +147,7 @@ var _ = Describe("Test Patch", func() {
 
 		Context("Test Patch Function Pointer by reflect.MakeFunc", func() {
 			var (
-				g    *Guard
+				g *Guard
 			)
 			BeforeEach(func() {
 				t := reflect.FuncOf([]reflect.Type{}, []reflect.Type{reflect.TypeOf(time.Time{})}, false)
@@ -348,6 +348,36 @@ var _ = Describe("Test Hijack Runtime", func() {
 
 			r.Release("u2386")
 			Expect(unpatched).To(BeTrue())
+		})
+	})
+})
+
+var _ = Describe("Test Function Hijack", func() {
+	Context("Test Function Delay", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r := New()
+			point := &HijackPoint{
+				Func:   "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				Action: DELAY,
+				Val:    500,
+			}
+			g, err = r.delay(point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should return until 500ms", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			t0 := time.Now()
+			this_is_for_test(0)
+			Expect(time.Since(t0) >= 500*time.Millisecond).Should(BeTrue())
 		})
 	})
 })
