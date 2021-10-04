@@ -26,9 +26,13 @@ type (
 	}
 
 	DelayPoint struct {
-		Func   string
-		Action Action
-		Val    int
+		HijackPoint `mapstructure:",squash"`
+		Val         int
+	}
+
+	PanicPoint struct {
+		HijackPoint `mapstructure:",squash"`
+		Val         string
 	}
 
 	Runtime struct {
@@ -46,6 +50,7 @@ type (
 
 const (
 	DELAY Action = "delay"
+	PANIC Action = "panic"
 )
 
 var (
@@ -68,6 +73,7 @@ func New(pid int) (*Runtime, error) {
 	r.symbols = make(map[string]elf.Symbol)
 	r.patches = map[Action]ActionFunc{
 		DELAY: r.delay,
+		PANIC: r.panic,
 	}
 
 	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
@@ -196,6 +202,33 @@ func (r *Runtime) delay(m Request) (*Guard, error) {
 		g := Patch(stub.Pointer(), symbol.Value)
 		defer g.Unpatch()
 		return stub.Call(args)
+	})
+
+	guard = Patch(symbol.Value, replacement.Interface())
+	return guard, nil
+}
+
+func (r *Runtime) panic(m Request) (*Guard, error) {
+	var point PanicPoint
+	mapstructure.Decode(m, &point)
+
+	node, ok := r.dwarftrees[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+	symbol, ok := r.symbols[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+
+	typ, err := MakeFunc(node, r.dwarf)
+	if err != nil {
+		return nil, err
+	}
+
+	var guard *Guard
+	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
+		panic(fmt.Sprintf("hijack:%s", point.Val))
 	})
 
 	guard = Patch(symbol.Value, replacement.Interface())

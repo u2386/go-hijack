@@ -19,7 +19,7 @@ import (
 
 var (
 	doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
-	pid = os.Getpid()
+	pid  = os.Getpid()
 )
 
 //go:noinline
@@ -361,11 +361,11 @@ var _ = Describe("Test Function Hijack", func() {
 		)
 
 		BeforeEach(func() {
-			r, _:= New(pid)
+			r, _ := New(pid)
 			point := map[string]interface{}{
-				"func": "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				"func":   "github.com/u2386/go-hijack/runtime.this_is_for_test",
 				"action": "delay",
-				"val": 500,
+				"val":    500,
 			}
 			g, err = r.delay(point)
 		})
@@ -379,6 +379,32 @@ var _ = Describe("Test Function Hijack", func() {
 			t0 := time.Now()
 			this_is_for_test(0)
 			Expect(time.Since(t0) >= 500*time.Millisecond).Should(BeTrue())
+		})
+	})
+
+	Context("Test Function Panic", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r, _ := New(pid)
+			point := map[string]interface{}{
+				"func":   "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				"action": "panic",
+				"val":    "boom",
+			}
+			g, err = r.panic(point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should return until 500ms", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(func() { this_is_for_test(0) }).Should(Panic())
 		})
 	})
 })
