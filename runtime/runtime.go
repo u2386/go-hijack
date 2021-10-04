@@ -14,13 +14,21 @@ import (
 	"time"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
+	"github.com/mitchellh/mapstructure"
 )
 
 type (
+	Request map[string]interface{}
+
 	HijackPoint struct {
 		Func   string
 		Action Action
-		Val    interface{}
+	}
+
+	DelayPoint struct {
+		Func   string
+		Action Action
+		Val    int
 	}
 
 	Runtime struct {
@@ -33,7 +41,7 @@ type (
 	}
 
 	Action     string
-	ActionFunc func(*HijackPoint) (*Guard, error)
+	ActionFunc func(Request) (*Guard, error)
 )
 
 const (
@@ -131,7 +139,9 @@ func (r *Runtime) Release(fn string) {
 	})
 }
 
-func (r *Runtime) Hijack(point *HijackPoint) error {
+func (r *Runtime) Hijack(m Request) error {
+	var point HijackPoint
+	mapstructure.Decode(m, &point)
 	if patch, ok := r.patches[point.Action]; ok {
 		if _, ok := r.M.Load(point.Func); ok {
 			return ErrPatchedAlready
@@ -139,7 +149,7 @@ func (r *Runtime) Hijack(point *HijackPoint) error {
 
 		c := make(chan error, 1)
 		r.C <- func() {
-			if g, err := patch(point); err == nil {
+			if g, err := patch(m); err == nil {
 				r.M.Store(point.Func, g)
 				c <- nil
 			} else {
@@ -151,9 +161,12 @@ func (r *Runtime) Hijack(point *HijackPoint) error {
 	return ErrUnsupportAction
 }
 
-func (r *Runtime) delay(point *HijackPoint) (*Guard, error) {
-	millsecs, ok := point.Val.(int)
-	if !ok {
+func (r *Runtime) delay(m Request) (*Guard, error) {
+	var point DelayPoint
+	mapstructure.Decode(m, &point)
+
+	var ok bool
+	if point.Val <= 0 {
 		return nil, ErrUnsupportAction
 	}
 
@@ -176,7 +189,7 @@ func (r *Runtime) delay(point *HijackPoint) (*Guard, error) {
 
 	stub := reflect.MakeFunc(typ, nil)
 	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
-		time.Sleep(time.Millisecond * time.Duration(millsecs))
+		time.Sleep(time.Millisecond * time.Duration(point.Val))
 		guard.Unpatch()
 		defer guard.Restore()
 

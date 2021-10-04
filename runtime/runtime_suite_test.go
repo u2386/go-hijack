@@ -298,9 +298,9 @@ var _ = Describe("Test Hijack Runtime", func() {
 			ctx, cancel = context.WithCancel(context.Background())
 
 			r, _ = New(pid)
-			r.patches["u2386"] = func(*HijackPoint) (*Guard, error) { patched = true; return nil, nil }
+			r.patches["u2386"] = func(Request) (*Guard, error) { patched = true; return nil, nil }
 			go r.Run(ctx)
-			err = r.Hijack(&HijackPoint{Action: "u2386"})
+			err = r.Hijack(map[string]interface{}{"action": "u2386"})
 		})
 
 		AfterEach(func() {
@@ -313,7 +313,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 		})
 
 		It("should return error", func() {
-			Expect(r.Hijack(&HijackPoint{Action: "unknown"})).To(BeEquivalentTo(ErrUnsupportAction))
+			Expect(r.Hijack(map[string]interface{}{"action": "unknown"})).To(BeEquivalentTo(ErrUnsupportAction))
 		})
 	})
 
@@ -362,10 +362,10 @@ var _ = Describe("Test Function Hijack", func() {
 
 		BeforeEach(func() {
 			r, _:= New(pid)
-			point := &HijackPoint{
-				Func:   "github.com/u2386/go-hijack/runtime.this_is_for_test",
-				Action: DELAY,
-				Val:    500,
+			point := map[string]interface{}{
+				"func": "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				"action": "delay",
+				"val": 500,
 			}
 			g, err = r.delay(point)
 		})

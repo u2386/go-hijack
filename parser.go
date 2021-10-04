@@ -7,7 +7,7 @@ import (
 
 type (
 	Parser interface {
-		Parse(string) *runtime.HijackPoint
+		Parse(string) runtime.Request
 	}
 
 	jsonparser struct{}
@@ -17,10 +17,10 @@ func JsonParser() *jsonparser {
 	return &jsonparser{}
 }
 
-func (*jsonparser) Parse(content string) *runtime.HijackPoint {
-	p := &runtime.HijackPoint{}
-	if err := json.Unmarshal([]byte(content), p); err != nil {
+func (*jsonparser) Parse(content string) runtime.Request {
+    var m map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &m); err != nil {
 		return nil
 	}
-	return p
+	return m
 }

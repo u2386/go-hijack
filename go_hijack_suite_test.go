@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mitchellh/mapstructure"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/u2386/go-hijack/runtime"
@@ -77,25 +78,25 @@ var _ = Describe("Test UDS Listener", func() {
 var _ = Describe("Test Parser", func() {
 	Context("Test Json Parser", func() {
 		var (
-			point *runtime.HijackPoint
+			point runtime.HijackPoint
 		)
 
 		BeforeEach(func() {
 			parser := JsonParser()
-			point = parser.Parse(`
+			m := parser.Parse(`
 			{
 				"func":"this_is_for_test",
 				"action":"delay",
 				"val": 10
 			}
 			`)
+			mapstructure.Decode(m, &point)
 		})
 
 		It("should parse successfully", func() {
 			Expect(point).ShouldNot(BeNil())
 			Expect(point.Func).To(BeEquivalentTo("this_is_for_test"))
 			Expect(point.Action).To(BeEquivalentTo("delay"))
-			Expect(point.Val).To(BeEquivalentTo(10))
 		})
 	})
 })
