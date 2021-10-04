@@ -298,7 +298,7 @@ var _ = Describe("Test Hijack Runtime", func() {
 			ctx, cancel = context.WithCancel(context.Background())
 
 			r, _ = New(pid)
-			r.patches["u2386"] = func(Request) (*Guard, error) { patched = true; return nil, nil }
+			r.patches["u2386"] = func(*Runtime, Request) (*Guard, error) { patched = true; return nil, nil }
 			go r.Run(ctx)
 			err = r.Hijack(map[string]interface{}{"action": "u2386"})
 		})
@@ -367,7 +367,7 @@ var _ = Describe("Test Function Hijack", func() {
 				"action": "delay",
 				"val":    500,
 			}
-			g, err = r.delay(point)
+			g, err = (&patcher{}).Delay(r, point)
 		})
 
 		AfterEach(func() {
@@ -395,16 +395,70 @@ var _ = Describe("Test Function Hijack", func() {
 				"action": "panic",
 				"val":    "boom",
 			}
-			g, err = r.panic(point)
+			g, err = (&patcher{}).Panic(r, point)
 		})
 
 		AfterEach(func() {
 			g.Unpatch()
 		})
 
-		It("should return until 500ms", func() {
+		It("should panic", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(func() { this_is_for_test(0) }).Should(Panic())
+		})
+	})
+
+	Context("Test Function Set Argument", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r, _ := New(pid)
+			point := map[string]interface{}{
+				"func":   "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				"action": "set",
+				"index":  0,
+				"val":    1024,
+			}
+			g, err = (&patcher{}).Set(r, point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should change argument", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(this_is_for_test(0)).To(BeEquivalentTo("1024"))
+		})
+	})
+
+	Context("Test Function Set Return", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r, _ := New(pid)
+			point := map[string]interface{}{
+				"func":   "github.com/u2386/go-hijack/runtime.this_is_for_test",
+				"action": "return",
+				"index":  0,
+				"val":    "1024",
+			}
+			g, err = (&patcher{}).Return(r, point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should change argument", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(this_is_for_test(0)).To(BeEquivalentTo("1024"))
 		})
 	})
 })

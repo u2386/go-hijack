@@ -35,6 +35,18 @@ type (
 		Val         string
 	}
 
+	SetPoint struct {
+		HijackPoint `mapstructure:",squash"`
+		Index       int
+		Val         interface{}
+	}
+
+	ReturnPoint struct {
+		HijackPoint `mapstructure:",squash"`
+		Index       int
+		Val         interface{}
+	}
+
 	Runtime struct {
 		M          sync.Map
 		C          chan func()
@@ -44,13 +56,17 @@ type (
 		dwarf      *dwarf.Data
 	}
 
+	patcher struct{}
+
 	Action     string
-	ActionFunc func(Request) (*Guard, error)
+	ActionFunc func(*Runtime, Request) (*Guard, error)
 )
 
 const (
-	DELAY Action = "delay"
-	PANIC Action = "panic"
+	DELAY  Action = "delay"
+	PANIC  Action = "panic"
+	SET    Action = "set"
+	RETURN Action = "return"
 )
 
 var (
@@ -71,9 +87,13 @@ func New(pid int) (*Runtime, error) {
 	r.M = sync.Map{}
 	r.C = make(chan func(), 1)
 	r.symbols = make(map[string]elf.Symbol)
+
+	pat := &patcher{}
 	r.patches = map[Action]ActionFunc{
-		DELAY: r.delay,
-		PANIC: r.panic,
+		DELAY:  pat.Delay,
+		PANIC:  pat.Panic,
+		SET:    pat.Set,
+		RETURN: pat.Return,
 	}
 
 	ef, err := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
@@ -155,7 +175,7 @@ func (r *Runtime) Hijack(m Request) error {
 
 		c := make(chan error, 1)
 		r.C <- func() {
-			if g, err := patch(m); err == nil {
+			if g, err := patch(r, m); err == nil {
 				r.M.Store(point.Func, g)
 				c <- nil
 			} else {
@@ -167,7 +187,7 @@ func (r *Runtime) Hijack(m Request) error {
 	return ErrUnsupportAction
 }
 
-func (r *Runtime) delay(m Request) (*Guard, error) {
+func (*patcher) Delay(r *Runtime, m Request) (*Guard, error) {
 	var point DelayPoint
 	mapstructure.Decode(m, &point)
 
@@ -208,7 +228,7 @@ func (r *Runtime) delay(m Request) (*Guard, error) {
 	return guard, nil
 }
 
-func (r *Runtime) panic(m Request) (*Guard, error) {
+func (*patcher) Panic(r *Runtime, m Request) (*Guard, error) {
 	var point PanicPoint
 	mapstructure.Decode(m, &point)
 
@@ -229,6 +249,78 @@ func (r *Runtime) panic(m Request) (*Guard, error) {
 	var guard *Guard
 	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
 		panic(fmt.Sprintf("hijack:%s", point.Val))
+	})
+
+	guard = Patch(symbol.Value, replacement.Interface())
+	return guard, nil
+}
+
+func (*patcher) Set(r *Runtime, m Request) (*Guard, error) {
+	var point SetPoint
+	mapstructure.Decode(m, &point)
+
+	node, ok := r.dwarftrees[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+	symbol, ok := r.symbols[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+
+	typ, err := MakeFunc(node, r.dwarf)
+	if err != nil {
+		return nil, err
+	}
+
+	var guard *Guard
+	stub := reflect.MakeFunc(typ, nil)
+	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
+		args[point.Index] = reflect.ValueOf(point.Val)
+
+		guard.Unpatch()
+		defer guard.Restore()
+
+		g := Patch(stub.Pointer(), symbol.Value)
+		defer g.Unpatch()
+
+		return stub.Call(args)
+	})
+
+	guard = Patch(symbol.Value, replacement.Interface())
+	return guard, nil
+}
+
+func (*patcher) Return(r *Runtime, m Request) (*Guard, error) {
+	var point SetPoint
+	mapstructure.Decode(m, &point)
+
+	node, ok := r.dwarftrees[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+	symbol, ok := r.symbols[point.Func]
+	if !ok {
+		return nil, ErrPointNotFound
+	}
+
+	typ, err := MakeFunc(node, r.dwarf)
+	if err != nil {
+		return nil, err
+	}
+
+	var guard *Guard
+	stub := reflect.MakeFunc(typ, nil)
+	replacement := reflect.MakeFunc(typ, func(args []reflect.Value) (results []reflect.Value) {
+		guard.Unpatch()
+		defer guard.Restore()
+
+		g := Patch(stub.Pointer(), symbol.Value)
+		defer g.Unpatch()
+
+		results = stub.Call(args)
+		results[point.Index] = reflect.ValueOf(point.Val)
+		return
 	})
 
 	guard = Patch(symbol.Value, replacement.Interface())
