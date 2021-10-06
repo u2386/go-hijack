@@ -14,16 +14,19 @@ import (
 )
 
 //go:noinline
-func DoingSomething(s string) string {
-	return fmt.Sprintf("foo:%s", s)
+func DoingSomething(s string) (string, error) {
+	return fmt.Sprintf("foo:%s", s), nil
 }
 
 func EchoHandler(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
 
-	data := DoingSomething(string(body))
-	fmt.Fprintf(w, "echo:%s", []byte(data))
+	data, err := DoingSomething(string(body))
+	if err != nil {
+		fmt.Fprintf(w, "error:%s", err.Error())
+	}
+	fmt.Fprintf(w, "echo:%s", data)
 }
 
 func main() {

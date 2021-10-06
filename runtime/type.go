@@ -106,6 +106,9 @@ func funcOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 func MakeType(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 	switch t := typ.(type) {
 	case *godwarf.TypedefType:
+		if t.Name == "error" {
+			return reflect.TypeOf((*error)(nil)).Elem(), nil
+		}
 		return MakeType(t.Type, dw)
 
 	case *godwarf.PtrType:

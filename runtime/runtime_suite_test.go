@@ -4,6 +4,7 @@ import (
 	"context"
 	"debug/dwarf"
 	"debug/elf"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -17,15 +18,33 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+type (
+	test_iface interface {
+		doing_something() string
+	}
+
+	test_iface_impl struct{}
+)
+
+func (*test_iface_impl) doing_something() string { return "doing something" }
+
 var (
 	doom = time.Date(2012, time.December, 21, 0, 0, 0, 0, time.UTC)
 	pid  = os.Getpid()
+
+	_    = this_is_for_test(0)
+	_, _ = test_for_two_returns(1)
+
+	_ = test_for_interface_arg(&test_iface_impl{})
 )
 
 //go:noinline
 func this_is_for_test(i int) string { return fmt.Sprint(i) }
 
-var _ = this_is_for_test(0)
+//go:noinline
+func test_for_two_returns(i int) (string, error) { return fmt.Sprint(i), nil }
+
+func test_for_interface_arg(i test_iface) string { return i.doing_something() }
 
 //go:noinline
 func doomer() time.Time { return doom }
@@ -261,6 +280,72 @@ var _ = Describe("Test Make Func", func() {
 			Expect(fn(1)).Should(BeEquivalentTo("1024"))
 		})
 	})
+
+	Context("Make Function with 2 returns", func() {
+		Context("Make Function", func() {
+			var (
+				ft  reflect.Type
+				err error
+			)
+
+			BeforeEach(func() {
+				pid := os.Getpid()
+				ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+				dw, _ := ef.DWARF()
+				trees, _ := DwarfTree(dw)
+
+				for name, tree := range trees {
+					if strings.HasSuffix(name, "test_for_two_returns") {
+						ft, err = MakeFunc(tree, dw)
+						break
+					}
+				}
+			})
+
+			It("should call successfully", func() {
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(ft).ShouldNot(BeZero())
+
+				fn := reflect.MakeFunc(ft, func(args []reflect.Value) (results []reflect.Value) {
+					return []reflect.Value{reflect.ValueOf("1024"), reflect.ValueOf(errors.New("doom"))}
+				}).Interface().(func(int) (string, error))
+				v, e := fn(1)
+				Expect(v).To(BeEquivalentTo("1024"))
+				Expect(e).Should(HaveOccurred())
+			})
+		})
+	})
+
+	Context("Make Function with a interface parameter", func() {
+		var (
+			ft  reflect.Type
+			err error
+		)
+
+		BeforeEach(func() {
+			pid := os.Getpid()
+			ef, _ := elf.Open(fmt.Sprintf("/proc/%d/exe", pid))
+			dw, _ := ef.DWARF()
+			trees, _ := DwarfTree(dw)
+
+			for name, tree := range trees {
+				if strings.HasSuffix(name, "test_for_interface_arg") {
+					ft, err = MakeFunc(tree, dw)
+					break
+				}
+			}
+		})
+
+		It("should call successfully", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			Expect(ft).ShouldNot(BeZero())
+
+			fn := reflect.MakeFunc(ft, func(args []reflect.Value) (results []reflect.Value) {
+				return []reflect.Value{reflect.ValueOf("1024")}
+			}).Interface().(func(interface{}) string)
+			Expect(fn(&test_iface_impl{})).Should(BeEquivalentTo("1024"))
+		})
+	})
 })
 
 var _ = Describe("Test Hijack Runtime", func() {
@@ -461,13 +546,69 @@ var _ = Describe("Test Function Hijack", func() {
 			Expect(this_is_for_test(0)).To(BeEquivalentTo("1024"))
 		})
 	})
+
+	Context("Test Function With a Interface Parameter", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r, _ := New(pid)
+			point := map[string]interface{}{
+				"func":   "github.com/u2386/go-hijack/runtime.test_for_interface_arg",
+				"action": "delay",
+				"val":    500,
+			}
+			g, err = (&patcher{}).Delay(r, point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should return until 500ms", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			t0 := time.Now()
+			_ = test_for_interface_arg(&test_iface_impl{})
+			Expect(time.Since(t0) >= 500*time.Millisecond).Should(BeTrue())
+		})
+	})
+
+	Context("Test Function Set error Return", func() {
+		var (
+			g   *Guard
+			err error
+		)
+
+		BeforeEach(func() {
+			r, _ := New(pid)
+			point := map[string]interface{}{
+				"func":   "github.com/u2386/go-hijack/runtime.test_for_two_returns",
+				"action": "return",
+				"index":  1,
+				"val":    "doom",
+			}
+			g, err = (&patcher{}).Return(r, point)
+		})
+
+		AfterEach(func() {
+			g.Unpatch()
+		})
+
+		It("should change argument", func() {
+			Expect(err).ShouldNot(HaveOccurred())
+			_, e := test_for_two_returns(0)
+			Expect(e).Should(HaveOccurred())
+		})
+	})
 })
 
 var _ = Describe("Tet Function Regex", func() {
 	Context("Test Function Regex", func() {
 		var (
 			matches = [][]string{
-				{ "func(string) string", " string", },
+				{"func(string) string", " string"},
 				{"func(string) (string, error)", " (string, error)"},
 				{"func(string)", ""},
 			}

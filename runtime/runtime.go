@@ -319,7 +319,13 @@ func (*patcher) Return(r *Runtime, m Request) (*Guard, error) {
 		defer g.Unpatch()
 
 		results = stub.Call(args)
-		results[point.Index] = reflect.ValueOf(point.Val)
+		if point.Index < typ.NumOut() {
+			if typ.Out(point.Index).Kind() == reflect.TypeOf((*error)(nil)).Elem().Kind() {
+				results[point.Index] = reflect.ValueOf(errors.New(point.Val.(string)))
+				return
+			}
+			results[point.Index] = reflect.ValueOf(point.Val)
+		}
 		return
 	})
 
