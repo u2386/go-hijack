@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
+	"unsafe"
 
 	"github.com/go-delve/delve/pkg/dwarf/godwarf"
 )
@@ -13,15 +15,8 @@ import (
 var (
 	ErrUnsupportedType = errors.New("unsupported type")
 	typeCache          = make(map[dwarf.Offset]godwarf.Type)
+	FuncReturnRegexp   = regexp.MustCompile(`^func\(.*?\)(?P<Return>.+)$`)
 )
-
-func stringOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
-	return reflect.TypeOf(""), nil
-}
-
-func intOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
-	return reflect.TypeOf(0), nil
-}
 
 func structOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 	t := typ.(*godwarf.StructType)
@@ -39,12 +34,85 @@ func structOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 	return reflect.StructOf(fields), nil
 }
 
+func mapOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
+	t := typ.(*godwarf.MapType)
+
+	kt, err := MakeType(t.KeyType, dw)
+	if err != nil {
+		return nil, err
+	}
+	vt, err := MakeType(t.ElemType, dw)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.MapOf(kt, vt), nil
+}
+
+func sliceOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
+	t := typ.(*godwarf.SliceType)
+	et, err := MakeType(t.ElemType, dw)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.SliceOf(et), nil
+}
+
+func chanOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
+	t := typ.(*godwarf.ChanType)
+	et, err := MakeType(t.ElemType, dw)
+	if err != nil {
+		return nil, err
+	}
+	return reflect.ChanOf(reflect.BothDir, et), nil
+}
+
+func funcOf(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
+	t := typ.(*godwarf.FuncType)
+
+	// FIXME: We cannot distinguish parameters and return values from FuncType, so
+	// we use regex to count function returns.
+	// See issue: https://github.com/golang/go/issues/48812
+	var count int
+	if m := FuncReturnRegexp.FindStringSubmatch(t.Name); m != nil {
+		count = len(strings.Split(m[1], ","))
+	}
+
+	pt := t.ParamType[:len(t.ParamType)-count]
+	rt := t.ParamType[len(pt):]
+
+	var (
+		in  []reflect.Type
+		out []reflect.Type
+	)
+	for _, param := range pt {
+		v, err := MakeType(param, dw)
+		if err != nil {
+			return nil, err
+		}
+		in = append(in, v)
+	}
+
+	for _, ret := range rt {
+		v, err := MakeType(ret.(*godwarf.PtrType).Type, dw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+
+	return reflect.FuncOf(in, out, false), nil
+}
+
 func MakeType(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 	switch t := typ.(type) {
 	case *godwarf.TypedefType:
 		return MakeType(t.Type, dw)
 
 	case *godwarf.PtrType:
+		if t.Name == "unsafe.Pointer" {
+			var ifunc interface{} = (func())(nil)
+			return reflect.TypeOf(unsafe.Pointer(&ifunc)), nil
+		}
 		rt, err := MakeType(t.Type, dw)
 		if err != nil {
 			return nil, err
@@ -55,10 +123,31 @@ func MakeType(typ godwarf.Type, dw *dwarf.Data) (reflect.Type, error) {
 		return structOf(t, dw)
 
 	case *godwarf.StringType:
-		return stringOf(t, dw)
+		return reflect.TypeOf(""), nil
 
 	case *godwarf.IntType:
-		return intOf(t, dw)
+		return reflect.TypeOf(0), nil
+
+	case *godwarf.BoolType:
+		return reflect.TypeOf(false), nil
+
+	case *godwarf.MapType:
+		return mapOf(t, dw)
+
+	case *godwarf.SliceType:
+		return sliceOf(t, dw)
+
+	case *godwarf.UintType:
+		return reflect.TypeOf(uint64(0)), nil
+
+	case *godwarf.FuncType:
+		return funcOf(t, dw)
+
+	case *godwarf.InterfaceType:
+		return reflect.TypeOf((*interface{})(nil)).Elem(), nil
+
+	case *godwarf.ChanType:
+		return chanOf(t, dw)
 
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrUnsupportedType, t.String())
